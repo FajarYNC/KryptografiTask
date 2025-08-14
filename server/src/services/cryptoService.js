@@ -1,41 +1,93 @@
 import crypto from "crypto";
 
-// Caesar Cipher
-export function caesarCipher(text, shift = 3, mode = "encrypt") {
-  const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const A = a.split("");
-  shift = (((mode === "decrypt" ? -shift : shift) % 26) + 26) % 26;
-  return text
+// ============= Classical Ciphers with Step Support =============
+export function caesarCipher(
+  text,
+  shift = 3,
+  mode = "encrypt",
+  { steps = false } = {}
+) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const A = alphabet.split("");
+  const realShift = (((mode === "decrypt" ? -shift : shift) % 26) + 26) % 26;
+  const stepData = [];
+  const result = text
     .toUpperCase()
     .split("")
-    .map((ch) => {
-      const idx = A.indexOf(ch);
-      if (idx === -1) return ch;
-      return A[(idx + shift) % 26];
+    .map((ch, idx) => {
+      const i = A.indexOf(ch);
+      if (i === -1) {
+        if (steps)
+          stepData.push({
+            index: idx,
+            input: ch,
+            output: ch,
+            shift: 0,
+            note: "non-alpha",
+          });
+        return ch;
+      }
+      const out = A[(i + realShift) % 26];
+      if (steps)
+        stepData.push({ index: idx, input: ch, output: out, shift: realShift });
+      return out;
     })
     .join("");
+  return steps ? { result, steps: stepData } : result;
 }
 
-// Vigenere Cipher
-export function vigenereCipher(text, key, mode = "encrypt") {
+export function vigenereCipher(
+  text,
+  key,
+  mode = "encrypt",
+  { steps = false } = {}
+) {
   const a = "A".charCodeAt(0);
   key = key.toUpperCase().replace(/[^A-Z]/g, "");
+  if (!key.length) throw new Error("Key kosong setelah normalisasi");
   let ki = 0;
-  return text
+  const stepData = [];
+  const result = text
     .toUpperCase()
     .split("")
-    .map((ch) => {
+    .map((ch, idx) => {
       const code = ch.charCodeAt(0);
-      if (code < 65 || code > 90) return ch;
-      const k = key.charCodeAt(ki++ % key.length) - a;
+      if (code < 65 || code > 90) {
+        if (steps)
+          stepData.push({
+            index: idx,
+            plain: ch,
+            keyChar: "",
+            shift: 0,
+            cipher: ch,
+            note: "non-alpha",
+          });
+        return ch;
+      }
+      const k = key.charCodeAt(ki % key.length) - a;
       const shift = mode === "decrypt" ? 26 - k : k;
-      return String.fromCharCode(((code - a + shift) % 26) + a);
+      const cipher = String.fromCharCode(((code - a + shift) % 26) + a);
+      if (steps)
+        stepData.push({
+          index: idx,
+          plain: ch,
+          keyChar: key[ki % key.length],
+          shift: mode === "decrypt" ? -k : k,
+          cipher,
+        });
+      ki++;
+      return cipher;
     })
     .join("");
+  return steps ? { result, steps: stepData } : result;
 }
 
-// Playfair Cipher (simplified: J merged with I)
-export function playfairCipher(text, key, mode = "encrypt") {
+export function playfairCipher(
+  text,
+  key,
+  mode = "encrypt",
+  { steps = false } = {}
+) {
   key = key
     .toUpperCase()
     .replace(/J/g, "I")
@@ -68,12 +120,14 @@ export function playfairCipher(text, key, mode = "encrypt") {
       if (c !== -1) return [r, c];
     }
   }
-  return pairs
-    .map(([a, b]) => {
+  const stepData = [];
+  const out = pairs
+    .map(([a, b], idxPair) => {
       let [ra, ca] = find(a);
       let [rb, cb] = find(b);
+      let rule = "";
       if (ra === rb) {
-        // same row
+        rule = "row";
         if (mode === "encrypt") {
           ca = (ca + 1) % 5;
           cb = (cb + 1) % 5;
@@ -82,7 +136,7 @@ export function playfairCipher(text, key, mode = "encrypt") {
           cb = (cb + 4) % 5;
         }
       } else if (ca === cb) {
-        // same col
+        rule = "column";
         if (mode === "encrypt") {
           ra = (ra + 1) % 5;
           rb = (rb + 1) % 5;
@@ -91,15 +145,19 @@ export function playfairCipher(text, key, mode = "encrypt") {
           rb = (rb + 4) % 5;
         }
       } else {
-        // rectangle
+        rule = "rectangle";
         [ca, cb] = [cb, ca];
       }
-      return grid[ra][ca] + grid[rb][cb];
+      const res = grid[ra][ca] + grid[rb][cb];
+      if (steps)
+        stepData.push({ index: idxPair, pair: a + b, rule, result: res });
+      return res;
     })
     .join("");
+  return steps ? { result: out, steps: stepData, table: grid } : out;
 }
 
-// RSA (demo only, not for production)
+// ============= Modern Crypto (Demo) =============
 export function generateRSAKeys() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -121,7 +179,6 @@ export function rsaDecrypt(privateKey, encrypted) {
     .toString("utf8");
 }
 
-// AES-256-CBC
 export function aesEncrypt(key, message) {
   key = crypto.createHash("sha256").update(key).digest();
   const iv = crypto.randomBytes(16);
@@ -145,9 +202,51 @@ export function aesDecrypt(key, ivHex, encryptedHex) {
   return decrypted.toString("utf8");
 }
 
-// Hashing
 export function hashMessage(algorithm, message) {
   if (!["sha256", "sha512", "md5"].includes(algorithm))
     throw new Error("Unsupported algorithm");
   return crypto.createHash(algorithm).update(message).digest("hex");
+}
+
+// ============= Base64 =============
+export function base64Transform(text, mode = "encode") {
+  if (mode === "encode") return Buffer.from(text, "utf8").toString("base64");
+  if (mode === "decode") return Buffer.from(text, "base64").toString("utf8");
+  throw new Error("Mode harus encode / decode");
+}
+
+// ============= Diffie-Hellman (demo) =============
+export function dhGenerateParams(primeLength = 512) {
+  // 512 untuk kecepatan demo
+  const dh = crypto.createDiffieHellman(primeLength);
+  dh.generateKeys();
+  return { prime: dh.getPrime("hex"), generator: dh.getGenerator("hex") };
+}
+
+export function dhGenerateKeyPair(prime, generator) {
+  const dh = crypto.createDiffieHellman(
+    Buffer.from(prime, "hex"),
+    Buffer.from(generator, "hex")
+  );
+  dh.generateKeys();
+  return {
+    privateKey: dh.getPrivateKey("hex"),
+    publicKey: dh.getPublicKey("hex"),
+  };
+}
+
+export function dhComputeSecret({
+  prime,
+  generator,
+  privateKey,
+  publicKey,
+  otherPublicKey,
+}) {
+  const dh = crypto.createDiffieHellman(
+    Buffer.from(prime, "hex"),
+    Buffer.from(generator, "hex")
+  );
+  dh.setPrivateKey(Buffer.from(privateKey, "hex"));
+  dh.setPublicKey(Buffer.from(publicKey, "hex"));
+  return dh.computeSecret(Buffer.from(otherPublicKey, "hex")).toString("hex");
 }
