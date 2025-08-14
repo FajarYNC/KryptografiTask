@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply antialiased;
+}
+
+.gradient-title {
+  @apply bg-gradient-to-r from-accent to-accent-soft bg-clip-text text-transparent;
+}
